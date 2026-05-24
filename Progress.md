@@ -15,17 +15,14 @@ Tracking implementation against [Vision.md](./Vision.md). Maintained by the mayo
 
 | ID | Title | Polecat | Notes |
 |----|-------|---------|-------|
-| mg-99eb | scaffold Craftmine Go module with g3n | scaffold-99eb | Bootstrap `go.mod`, add `g3n/engine`, minimal main window that exits on ESC. Required for everything else. |
+| mg-104a | block types (grass, dirt, stone, wood, leaves) | blocks-104a | Use a registry pattern so mods can add types later. |
+| mg-f8e6 | main menu (New Game + Resume Game) | menu-f8e6 | Resume Game stays hard-coded disabled until save/load lands. |
 
 ### Pending (dependencies not met)
 
 | ID | Title | Depends on | Notes |
 |----|-------|------------|-------|
-| mg-f8e6 | main menu (New Game + Resume Game) | mg-99eb | Resume Game stays hard-coded disabled until save/load lands. |
-| mg-104a | block types (grass, dirt, stone, wood, leaves) | mg-99eb | Use a registry pattern so mods can add types later. |
-| mg-4901 | 512×512 world with terrain generation | mg-99eb, mg-104a | Chunk the world (e.g. 16×16) for basic perf. |
-
-When `mg-99eb` lands, `mg-f8e6` and `mg-104a` can dispatch in parallel (within 5-polecat cap). `mg-4901` waits for `mg-104a`.
+| mg-4901 | 512×512 world with terrain generation | mg-104a | Chunk the world (e.g. 16×16) for basic perf. Scaffold dep met. |
 
 ### Planned (not yet filed)
 
@@ -34,7 +31,14 @@ When `mg-99eb` lands, `mg-f8e6` and `mg-104a` can dispatch in parallel (within 5
 
 ### Done
 
-_None yet._
+| ID | Title | Notes |
+|----|-------|-------|
+| mg-99eb | scaffold Go module + g3n window | Polecat work landed via manual merge (refinery couldn't push — no remote yet). Commit `eca3288`, merged at `39af928`. |
+
+## Known Issues
+
+- **Polecat spawn requires manual attach.** Spawned polecats receive the prompt pasted into their Claude Code input but Enter is never sent — they sit idle until a human attaches (`pogo agent attach <name>`) and submits. Same root cause as the architect start failure. Workaround until pogod is rebuilt.
+- **Refinery merges fail at push step.** No git remote configured yet (GitHub repo not created). Mayor manually merges polecat branches into main as a workaround. This will continue for `mg-104a`, `mg-f8e6`, `mg-4901` until `redjive2/Craftmine` is set up on GitHub.
 
 ## Design Notes
 
