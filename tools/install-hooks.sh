@@ -6,7 +6,10 @@
 set -euo pipefail
 
 repo_root=$(git rev-parse --show-toplevel)
-hook_dir="$(git rev-parse --git-dir)/hooks"
+# Use --git-common-dir, not --git-dir: hooks live in the shared gitdir so they
+# fire from any worktree. --git-dir returns the per-worktree path, which git
+# does not consult for hooks.
+hook_dir="$(git rev-parse --git-common-dir)/hooks"
 hook_file="${hook_dir}/pre-commit"
 script_rel="tools/pre-commit-progress.sh"
 script_abs="${repo_root}/${script_rel}"
