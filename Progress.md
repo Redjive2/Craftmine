@@ -1,8 +1,8 @@
 # Craftmine Progress
 
 <!-- auto-stamp:start -->
-Version: 0.0.1
-Last commit: 2026-05-25T18:56:15Z
+Version: 0.0.2
+Last commit: 2026-05-25T19:01:44Z
 <!-- auto-stamp:end -->
 
 Tracking implementation against [Vision.md](./Vision.md). Maintained by the mayor.
