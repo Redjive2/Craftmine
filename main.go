@@ -65,11 +65,25 @@ const mouseSensitivity = 0.0035
 func main() {
 	a := g3napp.App()
 
-	// Open fullscreen on the primary monitor. App() created an 800x600
-	// windowed surface; switching now (before any layout / handlers) means
-	// the very first frame is drawn at the monitor's native resolution.
+	// Make the App()-created 800x600 window cover the primary monitor as a
+	// borderless window at the monitor's native resolution. We avoid g3n's
+	// SetFullscreen (which calls glfw.SetMonitor with a non-nil monitor)
+	// because on macOS that path:
+	//   - explicitly switches the display's video mode, visibly changing
+	//     the screen resolution at startup,
+	//   - triggers the Cocoa space-switch animation, racing the first
+	//     rendered frame so the window stays invisible until a user
+	//     input event pumps the animation forward,
+	//   - and during that transition the window can lose focus / receive
+	//     a stray close event that flips ShouldClose, exiting the main
+	//     loop on the very first frame after the click that revealed it.
+	// Borderless-windowed at the monitor size sidesteps all three.
 	gw := a.IWindow.(*window.GlfwWindow)
-	gw.SetFullscreen(true)
+	mon := glfw.GetPrimaryMonitor()
+	vmode := mon.GetVideoMode()
+	gw.SetAttrib(glfw.Decorated, glfw.False)
+	gw.SetSize(vmode.Width, vmode.Height)
+	gw.SetPos(0, 0)
 
 	menuScene := core.NewNode()
 	worldScene := core.NewNode()
