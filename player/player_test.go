@@ -15,13 +15,30 @@ const epsilon = 1e-9
 
 // fakeBounds is a tiny WorldBounds that lets tests dial in dimensions
 // directly. The production world.Model satisfies the same interface.
+//
+// surface controls the per-column floor returned by HeightAt. nil means
+// a flat world where the surface is below the playable area (so the
+// player rests at y=0, matching the original "ground at y=0" tests).
+// A non-nil map keyed by [x*depth+z] specifies the topmost solid block
+// per column for terrain-aware cases.
 type fakeBounds struct {
 	width, depth, height int
+	surface              map[int]int
 }
 
 func (b fakeBounds) Width() int     { return b.width }
 func (b fakeBounds) Depth() int     { return b.depth }
 func (b fakeBounds) MaxHeight() int { return b.height }
+
+func (b fakeBounds) HeightAt(x, z int) int {
+	if x < 0 || x >= b.width || z < 0 || z >= b.depth {
+		return -1
+	}
+	if b.surface == nil {
+		return -1
+	}
+	return b.surface[x*b.depth+z]
+}
 
 func defaultBounds() fakeBounds { return fakeBounds{width: 64, depth: 64, height: 64} }
 
@@ -268,6 +285,32 @@ func TestGravityPullsAirborneToGround(t *testing.T) {
 	}
 	approx(t, "rested y", m.Position().Y(), 0, 1e-6)
 	approx(t, "rested vy", m.Velocity().Y(), 0, 1e-6)
+}
+
+// TestGravityLandsOnTerrainSurface — when WorldBounds reports a non-trivial
+// surface for a column, the player must rest one block above that surface
+// instead of falling to y=0. This is the bug from mg-f235: with the original
+// y=0 floor the player would clip through visible terrain.
+func TestGravityLandsOnTerrainSurface(t *testing.T) {
+	var impl player.Player = player.Impl{}
+	bounds := fakeBounds{
+		width:   16,
+		depth:   16,
+		height:  64,
+		surface: map[int]int{8*16 + 8: 24}, // a single tall column under the player
+	}
+	m := player.New(player.NewVec3(8.5, 40, 8.5))
+	dt := 1.0 / 60
+	for i := 0; i < 600; i++ { // up to 10 seconds — plenty to fall
+		m = impl.Tick(m, player.Input{}, bounds, dt)
+		if m.OnGround() {
+			break
+		}
+	}
+	if !m.OnGround() {
+		t.Fatalf("never landed on raised terrain; pos=%+v vel=%+v", m.Position(), m.Velocity())
+	}
+	approx(t, "rested y", m.Position().Y(), 25, 1e-6) // surface+1
 }
 
 // TestJumpLeavesGroundAndLandsBack confirms the jump impulse adds upward

@@ -28,15 +28,22 @@ type Impl struct{}
 var _ Player = Impl{}
 
 // WorldBounds is the sub-interface of the world Model that the player needs
-// to keep itself inside the playable area. world.Model satisfies this
-// already (see world/model.go), so wiring at main.go is a direct pass.
+// to keep itself inside the playable area and rest on the terrain surface.
+// world.Model satisfies this already (see world/model.go), so wiring at
+// main.go is a direct pass.
 //
 // Defining the interface here — rather than importing world directly — keeps
 // the player module independent of any other primary module, per Vision.md.
+//
+// HeightAt is the y of the topmost solid block in column (x, z); the player's
+// foot rests at HeightAt(x, z) + 1. Out-of-range columns must return a sane
+// non-negative floor (typically 0) so a momentarily-out-of-bounds integration
+// step does not hand the player a NaN floor before the X/Z clamp runs.
 type WorldBounds interface {
 	Width() int
 	Depth() int
 	MaxHeight() int
+	HeightAt(x, z int) int
 }
 
 // Input is the per-tick command surface from main.go. Booleans are "is
@@ -75,11 +82,6 @@ const (
 	// break, GC stall, window dragged) shouldn't produce a single
 	// catastrophic integration step.
 	MaxDelta = 0.1
-
-	// minFloorY is the lowest Y the player can occupy. y=0 is the
-	// terrain floor for the first-pass world; gravity stops here until
-	// real block collision lands in a follow-up ticket.
-	minFloorY = 0.0
 )
 
 // Tick advances the player physics by dt seconds.
@@ -229,10 +231,17 @@ func desiredHorizontalVelocity(in Input, yaw float64) Vec3 {
 	return Vec3{x: vx, z: vz}
 }
 
-// resolveBounds applies the simple ground collision (y >= 0) and clamps
-// horizontal position to the playable area. Out-of-bound collisions zero
-// the relevant velocity component so the player doesn't accumulate
-// energy by being pushed back each frame.
+// resolveBounds clamps horizontal position to the playable area and stops
+// the player's feet at the surface of whatever column they're standing on
+// (HeightAt(x, z) + 1). Out-of-bound collisions zero the relevant velocity
+// component so the player doesn't accumulate energy by being pushed back
+// each frame.
+//
+// The horizontal clamp runs first so HeightAt is always sampled from an
+// in-range column. This is the "ant on a heightmap" model — there is no
+// per-block collision yet, so a player walking into a taller column will
+// step up to its surface rather than be blocked. Good enough until real
+// block collision lands; see Vision.md.
 func resolveBounds(pos, vel Vec3, bounds WorldBounds) (Vec3, Vec3, bool) {
 	onGround := false
 	maxX := float64(bounds.Width()) - 0.001
@@ -268,8 +277,12 @@ func resolveBounds(pos, vel Vec3, bounds WorldBounds) (Vec3, Vec3, bool) {
 			vel.y = 0
 		}
 	}
-	if pos.y <= minFloorY {
-		pos.y = minFloorY
+	floorY := float64(bounds.HeightAt(int(pos.x), int(pos.z)) + 1)
+	if floorY < 0 {
+		floorY = 0
+	}
+	if pos.y <= floorY {
+		pos.y = floorY
 		if vel.y < 0 {
 			vel.y = 0
 		}

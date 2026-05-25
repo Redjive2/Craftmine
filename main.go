@@ -36,6 +36,7 @@ import (
 	"github.com/g3n/engine/math32"
 	"github.com/g3n/engine/renderer"
 	"github.com/g3n/engine/window"
+	"github.com/go-gl/glfw/v3.3/glfw"
 )
 
 // Visual constants for the menu layout. Pixel values, not world units.
@@ -63,6 +64,13 @@ const mouseSensitivity = 0.0035
 
 func main() {
 	a := g3napp.App()
+
+	// Open fullscreen on the primary monitor. App() created an 800x600
+	// windowed surface; switching now (before any layout / handlers) means
+	// the very first frame is drawn at the monitor's native resolution.
+	gw := a.IWindow.(*window.GlfwWindow)
+	gw.SetFullscreen(true)
+
 	menuScene := core.NewNode()
 	worldScene := core.NewNode()
 
@@ -215,6 +223,12 @@ func main() {
 				worldModel = wm
 				playerState = ps
 				gui.Manager().Set(worldScene)
+				// Disable the OS cursor and lock its position to the
+				// window so first-person mouse-look gets raw, unbounded
+				// deltas instead of fighting the cursor against the
+				// window edge. The OnCursor subscriber already handles
+				// the post-disable position jump via cursorSeeded.
+				gw.SetInputMode(glfw.CursorMode, glfw.CursorDisabled)
 				worldStarted = true
 				cursorSeeded = false
 				layout()
