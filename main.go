@@ -109,10 +109,20 @@ func main() {
 	// layout recomputes positions for the title and button stack so
 	// they stay centered as the window resizes. It also updates the
 	// world camera's aspect ratio once the world is up.
+	//
+	// Two coordinate systems are at play. The GL viewport is in physical
+	// pixels (GetFramebufferSize), since glViewport addresses the
+	// framebuffer directly. GUI panel positions are in logical pixels
+	// (GetSize), since gui.Panel.SetModelMatrix multiplies by the window
+	// DPI scale to convert. Mixing them up — e.g. setting the viewport
+	// to logical size on Retina — leaves the world rendered into a
+	// quadrant of the framebuffer and the menu drawn at 2x its intended
+	// size with hitboxes still in the correct (logical) place.
 	layout := func() {
 		width, height := a.GetSize()
+		fbw, fbh := a.GetFramebufferSize()
 		fw, fh := float32(width), float32(height)
-		a.Gls().Viewport(0, 0, int32(width), int32(height))
+		a.Gls().Viewport(0, 0, int32(fbw), int32(fbh))
 		menuCam.SetAspect(fw / fh)
 		if worldCam != nil {
 			worldCam.SetAspect(fw / fh)
