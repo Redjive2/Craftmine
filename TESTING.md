@@ -57,3 +57,32 @@ go test ./...
 ```
 
 Runs every test across all modules.
+
+## Pre-commit Progress.md auto-stamp
+
+Install once per clone (or per worktree):
+
+```
+bash tools/install-hooks.sh
+```
+
+This drops a `pre-commit` hook into the local `.git/hooks/` dir that delegates
+to the tracked script at `tools/pre-commit-progress.sh`. On every subsequent
+`git commit`, the script:
+
+- reads the last `Version: X.Y.Z` line from `Progress.md` (default `0.0.0`),
+- bumps the patch number,
+- rewrites the `<!-- auto-stamp:start --> ... <!-- auto-stamp:end -->` block
+  near the top of `Progress.md` with the new version and current UTC
+  timestamp,
+- `git add`s `Progress.md` so the stamp is part of the commit being made.
+
+The hook is a no-op when:
+
+- the commit message starts with `WIP:` (read from
+  `$(git rev-parse --git-dir)/COMMIT_EDITMSG`), or
+- the caller passed `--no-verify` to git (git skips the hook entirely).
+
+Stamp failures never block a commit — they log a warning to stderr and exit
+`0`. Re-running `install-hooks.sh` is safe; it overwrites the hook file in
+place.
