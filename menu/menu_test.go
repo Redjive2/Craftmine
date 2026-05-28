@@ -7,10 +7,10 @@ import (
 )
 
 // TestNewHasCanonicalEntries verifies New seeds the model with exactly
-// the two items the vision calls for: New Game (enabled) and Resume
-// Game (disabled, pending save/load).
+// the two items the vision calls for: New Game (always enabled) and
+// Resume Game (enabled iff resumeAvailable was true).
 func TestNewHasCanonicalEntries(t *testing.T) {
-	m := menu.New()
+	m := menu.New(false)
 	items := m.Items()
 	if len(items) != 2 {
 		t.Fatalf("len(items) = %d, want 2", len(items))
@@ -25,10 +25,22 @@ func TestNewHasCanonicalEntries(t *testing.T) {
 	}
 }
 
+// TestNewWithResumeAvailableEnablesResume verifies the constructor
+// argument actually flips the Resume Game item's Enabled() bit, so the
+// menu's enable state is genuinely a function of the Model — not a
+// cached or global value.
+func TestNewWithResumeAvailableEnablesResume(t *testing.T) {
+	m := menu.New(true)
+	items := m.Items()
+	if !items[1].Enabled() {
+		t.Fatalf("Resume Game item Enabled() = false with resumeAvailable=true; want enabled")
+	}
+}
+
 // TestNewStartsUnselectedAndUnhighlighted verifies the initial Model
 // is in the "menu just opened, user has not interacted" state.
 func TestNewStartsUnselectedAndUnhighlighted(t *testing.T) {
-	m := menu.New()
+	m := menu.New(false)
 	if m.Selected() != menu.ChoiceNone {
 		t.Fatalf("Selected() = %v, want ChoiceNone", m.Selected())
 	}
@@ -46,7 +58,7 @@ func TestNewStartsUnselectedAndUnhighlighted(t *testing.T) {
 // rejection paths for out-of-range indices.
 func TestHighlight(t *testing.T) {
 	impl := menu.Impl{}
-	base := menu.New()
+	base := menu.New(false)
 	// Pre-seed a known highlighted=0 so the rejection cases have
 	// something specific to be "unchanged from".
 	base = impl.Highlight(base, 0)
@@ -80,7 +92,7 @@ func TestHighlight(t *testing.T) {
 // records the selection and flips IsDone, without mutating the input.
 func TestSelectEnabledIsAccepted(t *testing.T) {
 	impl := menu.Impl{}
-	m := menu.New()
+	m := menu.New(false)
 	after := impl.Select(m, menu.ChoiceNewGame)
 	if after.Selected() != menu.ChoiceNewGame {
 		t.Fatalf("Selected() = %v, want ChoiceNewGame", after.Selected())
@@ -99,7 +111,7 @@ func TestSelectEnabledIsAccepted(t *testing.T) {
 // half-implemented resume path to the rest of the game.
 func TestSelectDisabledIsRejected(t *testing.T) {
 	impl := menu.Impl{}
-	m := menu.New()
+	m := menu.New(false)
 	after := impl.Select(m, menu.ChoiceResumeGame)
 	if after.Selected() != menu.ChoiceNone {
 		t.Fatalf("Selected() = %v, want ChoiceNone — Resume Game is disabled", after.Selected())
@@ -109,11 +121,27 @@ func TestSelectDisabledIsRejected(t *testing.T) {
 	}
 }
 
+// TestSelectResumeAcceptedWhenAvailable mirrors the above for the
+// post-save case: once a save exists, Resume Game must be selectable
+// and IsDone must flip. Without this, the menu's "function of Model"
+// contract would be silently one-directional.
+func TestSelectResumeAcceptedWhenAvailable(t *testing.T) {
+	impl := menu.Impl{}
+	m := menu.New(true)
+	after := impl.Select(m, menu.ChoiceResumeGame)
+	if after.Selected() != menu.ChoiceResumeGame {
+		t.Fatalf("Selected() = %v, want ChoiceResumeGame", after.Selected())
+	}
+	if !impl.IsDone(after) {
+		t.Fatalf("IsDone(after) = false, want true once Resume Game is selected")
+	}
+}
+
 // TestSelectUnknownChoiceIsRejected guards against future Choice
 // constants slipping through Select without an items entry.
 func TestSelectUnknownChoiceIsRejected(t *testing.T) {
 	impl := menu.Impl{}
-	m := menu.New()
+	m := menu.New(false)
 	after := impl.Select(m, menu.Choice(999))
 	if after.Selected() != menu.ChoiceNone {
 		t.Fatalf("Selected() = %v, want ChoiceNone for unknown Choice(999)", after.Selected())
@@ -123,7 +151,7 @@ func TestSelectUnknownChoiceIsRejected(t *testing.T) {
 // TestItemsIsACopy verifies Model.Items returns an isolated slice so
 // callers cannot reach in and mutate the immutable items.
 func TestItemsIsACopy(t *testing.T) {
-	m := menu.New()
+	m := menu.New(false)
 	items := m.Items()
 	items[0] = menu.Item{}
 	again := m.Items()

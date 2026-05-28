@@ -24,6 +24,7 @@ import (
 	"github.com/redjive2/Craftmine/blocks"
 	"github.com/redjive2/Craftmine/menu"
 	"github.com/redjive2/Craftmine/player"
+	"github.com/redjive2/Craftmine/save"
 	"github.com/redjive2/Craftmine/world"
 	"github.com/redjive2/Craftmine/worldview"
 
@@ -101,8 +102,20 @@ func main() {
 	var application app.App = app.Impl{}
 	state := app.New()
 
+	// Save module wiring. A missing home dir is non-fatal: we keep
+	// running with an empty path, which makes Exists() always false
+	// (so Resume Game stays disabled) and WriteWorld() fail loudly on
+	// close.
+	var saveImpl save.Save = save.Impl{}
+	savePath, savePathErr := save.DefaultPath()
+	if savePathErr != nil {
+		log.Printf("craftmine: cannot resolve save path: %v (saves disabled)", savePathErr)
+	}
+	saveModel := save.New(savePath)
+	resumeAvailable := saveImpl.Exists(saveModel)
+
 	var menuApp menu.Menu = menu.Impl{}
-	menuState := menu.New()
+	menuState := menu.New(resumeAvailable)
 
 	var worldImpl world.World = world.Impl{}
 	var viewImpl worldview.View = worldview.Impl{}
@@ -224,29 +237,44 @@ func main() {
 			return
 		}
 		if !worldStarted && menuApp.IsDone(menuState) {
+			var wm world.Model
+			var ps player.Model
+			var cam *camera.Camera
+			var err error
 			switch menuApp.Selected(menuState) {
 			case menu.ChoiceNewGame:
-				cam, wm, ps, err := startWorld(worldScene, viewImpl, worldImpl, playerImpl, a)
+				cam, wm, ps, err = startNewWorld(worldScene, viewImpl, worldImpl, playerImpl, a)
 				if err != nil {
 					log.Printf("craftmine: failed to start world: %v", err)
 					state = application.Stop(state)
 					a.Exit()
 					return
 				}
-				worldCam = cam
-				worldModel = wm
-				playerState = ps
-				gui.Manager().Set(worldScene)
-				// Disable the OS cursor and lock its position to the
-				// window so first-person mouse-look gets raw, unbounded
-				// deltas instead of fighting the cursor against the
-				// window edge. The OnCursor subscriber already handles
-				// the post-disable position jump via cursorSeeded.
-				gw.SetInputMode(glfw.CursorMode, glfw.CursorDisabled)
-				worldStarted = true
-				cursorSeeded = false
-				layout()
+			case menu.ChoiceResumeGame:
+				cam, wm, ps, err = resumeWorld(worldScene, viewImpl, worldImpl, playerImpl, a, saveImpl, saveModel)
+				if err != nil {
+					log.Printf("craftmine: failed to resume world: %v", err)
+					// Drop back to the menu cleanly rather than crashing
+					// — the player can still pick New Game.
+					menuState = menu.New(false)
+					return
+				}
+			default:
+				return
 			}
+			worldCam = cam
+			worldModel = wm
+			playerState = ps
+			gui.Manager().Set(worldScene)
+			// Disable the OS cursor and lock its position to the
+			// window so first-person mouse-look gets raw, unbounded
+			// deltas instead of fighting the cursor against the
+			// window edge. The OnCursor subscriber already handles
+			// the post-disable position jump via cursorSeeded.
+			gw.SetInputMode(glfw.CursorMode, glfw.CursorDisabled)
+			worldStarted = true
+			cursorSeeded = false
+			layout()
 		}
 		a.Gls().Clear(gls.DEPTH_BUFFER_BIT | gls.STENCIL_BUFFER_BIT | gls.COLOR_BUFFER_BIT)
 		if worldStarted {
@@ -263,14 +291,26 @@ func main() {
 			log.Printf("craftmine: render error: %v", err)
 		}
 	})
+
+	// Save on shutdown. a.Run returns once the window has been told to
+	// close (either Escape -> a.Exit, or the OS close-button setting
+	// ShouldClose), so this runs on every exit path. Save failures are
+	// logged and swallowed — we never want to deadlock or panic the exit
+	// path over a disk error.
+	if worldStarted && savePath != "" {
+		if _, err := saveImpl.WriteWorld(saveModel, worldModel, playerState); err != nil {
+			log.Printf("craftmine: save on close failed: %v", err)
+		} else {
+			log.Printf("craftmine: saved world to %s", savePath)
+		}
+	}
 }
 
-// startWorld wires up the world scene: build a block registry, generate
-// the world, build meshes through the worldview Impl, add lighting, and
-// stand up the camera and player. Returns the world camera, the world
-// Model (needed by the per-frame player Tick for bounds), and the
-// spawned player state.
-func startWorld(scene *core.Node, viewImpl worldview.View, worldImpl world.World, playerImpl player.Player, a *g3napp.Application) (*camera.Camera, world.Model, player.Model, error) {
+// startNewWorld generates a fresh world from the New Game defaults, spawns
+// the player at its center, and attaches everything to scene. Returns the
+// camera, the world Model (needed by the per-frame player Tick for bounds),
+// and the spawned player state.
+func startNewWorld(scene *core.Node, viewImpl worldview.View, worldImpl world.World, playerImpl player.Player, a *g3napp.Application) (*camera.Camera, world.Model, player.Model, error) {
 	var blocksImpl blocks.Blocks = blocks.Impl{}
 	registry, err := blocks.NewWithDefaults(blocksImpl)
 	if err != nil {
@@ -290,7 +330,40 @@ func startWorld(scene *core.Node, viewImpl worldview.View, worldImpl world.World
 	log.Printf("craftmine: generated %dx%dx%d world, seed=%d, %d trees",
 		model.Width(), model.Depth(), model.MaxHeight(), newGameSeed, model.TreeCount())
 
-	view := viewImpl.Build(model, worldImpl, registry, blocksImpl)
+	ps := spawnAtCenter(model, playerImpl)
+	cam := attachWorldScene(scene, model, viewImpl, worldImpl, registry, blocksImpl, a)
+	updateCamera(cam, playerImpl, ps)
+	return cam, model, ps, nil
+}
+
+// resumeWorld decodes the on-disk save, rebuilds the world scene from it,
+// and returns the camera + loaded Models. Failures (no save, corrupt save,
+// version mismatch) are surfaced as errors so the caller can fall back to
+// the menu rather than crashing with a half-built scene.
+func resumeWorld(scene *core.Node, viewImpl worldview.View, worldImpl world.World, playerImpl player.Player, a *g3napp.Application, saveImpl save.Save, saveModel save.Model) (*camera.Camera, world.Model, player.Model, error) {
+	wm, ps, err := saveImpl.ReadWorld(saveModel)
+	if err != nil {
+		return nil, world.Model{}, player.Model{}, fmt.Errorf("read save: %w", err)
+	}
+	var blocksImpl blocks.Blocks = blocks.Impl{}
+	registry, err := blocks.NewWithDefaults(blocksImpl)
+	if err != nil {
+		return nil, world.Model{}, player.Model{}, fmt.Errorf("blocks registry: %w", err)
+	}
+	log.Printf("craftmine: resumed %dx%dx%d world, %d trees, player at (%.1f, %.1f, %.1f)",
+		wm.Width(), wm.Depth(), wm.MaxHeight(), wm.TreeCount(),
+		ps.Position().X(), ps.Position().Y(), ps.Position().Z())
+
+	cam := attachWorldScene(scene, wm, viewImpl, worldImpl, registry, blocksImpl, a)
+	updateCamera(cam, playerImpl, ps)
+	return cam, wm, ps, nil
+}
+
+// attachWorldScene builds meshes for wm, drops in standard lighting and a
+// fresh camera, and adds them all under scene. Shared by New Game and
+// Resume Game so the scene wiring stays in one place.
+func attachWorldScene(scene *core.Node, wm world.Model, viewImpl worldview.View, worldImpl world.World, registry blocks.Model, blocksImpl blocks.Blocks, a *g3napp.Application) *camera.Camera {
+	view := viewImpl.Build(wm, worldImpl, registry, blocksImpl)
 	scene.Add(view.Surfaces())
 	scene.Add(view.Trees())
 
@@ -300,17 +373,18 @@ func startWorld(scene *core.Node, viewImpl worldview.View, worldImpl world.World
 	scene.Add(sun)
 
 	cam := camera.New(1)
-	cam.SetFar(float32(model.Width()) * 4)
+	cam.SetFar(float32(wm.Width()) * 4)
 	scene.Add(cam)
 
 	width, height := a.GetSize()
 	cam.SetAspect(float32(width) / float32(height))
+	return cam
+}
 
-	// Spawn the player one block above the surface at the world's center
-	// column. SetPosition exists to validate against world bounds; if the
-	// computed spawn is somehow rejected (off-by-one at the edges of the
-	// configured world), fall back to the world center floor — being
-	// visibly inside terrain is better than a startup crash.
+// spawnAtCenter places the player one block above the surface at the world's
+// center column. SetPosition validates against bounds; on rejection we fall
+// back to (0, 0, 0) so an off-by-one at world edges doesn't crash startup.
+func spawnAtCenter(model world.Model, playerImpl player.Player) player.Model {
 	spawnX := float64(model.Width()) / 2
 	spawnZ := float64(model.Depth()) / 2
 	surface := model.HeightAt(int(spawnX), int(spawnZ))
@@ -319,19 +393,13 @@ func startWorld(scene *core.Node, viewImpl worldview.View, worldImpl world.World
 		spawnY = float64(model.MaxHeight())
 	}
 	spawn := player.NewVec3(spawnX, spawnY, spawnZ)
-	ps := player.New(spawn)
-	ps, perr := playerImpl.SetPosition(ps, spawn, model)
+	ps, perr := playerImpl.SetPosition(player.New(spawn), spawn, model)
 	if perr != nil {
 		log.Printf("craftmine: spawn position rejected (%v); falling back to (0, 0, 0)", perr)
 		ps = player.New(player.NewVec3(0, 0, 0))
 	}
 	log.Printf("craftmine: player spawned at (%.1f, %.1f, %.1f), surface=%d", spawnX, spawnY, spawnZ, surface)
-
-	// Initial camera placement so the first rendered frame is sensible
-	// even before Tick runs.
-	updateCamera(cam, playerImpl, ps)
-
-	return cam, model, ps, nil
+	return ps
 }
 
 // buildInput maps the current keyboard state into a per-tick Input struct

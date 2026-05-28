@@ -54,14 +54,20 @@ type Model struct {
 }
 
 // New returns a Model wired with the canonical Craftmine menu: a New
-// Game entry (enabled) and a Resume Game entry (hard-coded disabled
-// until save/load lands). The model starts with no highlight and no
-// selection.
-func New() Model {
+// Game entry (always enabled) and a Resume Game entry whose enabled
+// state is the value of resumeAvailable. The model starts with no
+// highlight and no selection.
+//
+// Resume-availability is a constructor argument — not a global, not a
+// cached lookup — so the enable state is a pure function of the Model.
+// Callers are expected to compute resumeAvailable by asking the save
+// module (save.Impl{}.Exists(...)) and rebuild the Model when that
+// answer might have changed (startup, return-to-menu).
+func New(resumeAvailable bool) Model {
 	return Model{
 		items: []Item{
 			{label: "New Game", choice: ChoiceNewGame, enabled: true},
-			{label: "Resume Game", choice: ChoiceResumeGame, enabled: false},
+			{label: "Resume Game", choice: ChoiceResumeGame, enabled: resumeAvailable},
 		},
 		highlighted: -1,
 		selected:    ChoiceNone,
