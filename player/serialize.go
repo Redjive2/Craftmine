@@ -22,7 +22,10 @@ type playerSnapshot struct {
 
 // Serialize encodes the player Model to a gob blob. Pure: same Model always
 // produces the same bytes (subject to gob's stability guarantees).
-func (m Model) Serialize() ([]byte, error) {
+//
+// Behavior hangs off Impl; the Model to encode is passed as an argument, per
+// the Model/Impl split (see impl.go).
+func (Impl) Serialize(m Model) ([]byte, error) {
 	snap := playerSnapshot{
 		PositionX:    m.position.x,
 		PositionY:    m.position.y,

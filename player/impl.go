@@ -18,6 +18,7 @@ type Player interface {
 	ForwardDirection(m Model) Vec3
 	HorizontalForward(m Model) Vec3
 	LookTarget(m Model) Vec3
+	Serialize(m Model) ([]byte, error)
 }
 
 // Impl is the zero-field implementation of Player. All behavior hangs off

@@ -48,9 +48,25 @@ var (
 // (e.g. an in-memory implementation for tests that don't want to touch
 // disk).
 type Save interface {
-	WriteWorld(m Model, w world.Model, p player.Model) (Model, error)
+	WriteWorld(m Model, w world.Model, ws WorldSerializer, p player.Model, ps PlayerSerializer) (Model, error)
 	ReadWorld(m Model) (world.Model, player.Model, error)
 	Exists(m Model) bool
+}
+
+// WorldSerializer is the sub-implementation interface the save module needs
+// from the world module: just the ability to encode a world Model to bytes.
+// world.Impl satisfies it. Defining a narrow interface here — rather than
+// depending on the full world.World behavior surface — keeps the save module
+// loosely coupled and lets tests pass a stub serializer, per Vision.md's
+// "define sub-model and sub-implementation interfaces to pass around".
+type WorldSerializer interface {
+	Serialize(m world.Model) ([]byte, error)
+}
+
+// PlayerSerializer is the analogous narrow sub-implementation interface for
+// the player module; player.Impl satisfies it.
+type PlayerSerializer interface {
+	Serialize(m player.Model) ([]byte, error)
 }
 
 // Impl is the zero-field implementation of Save. All state lives in
@@ -68,19 +84,21 @@ type envelopePayload struct {
 	Player []byte
 }
 
-// WriteWorld atomically writes (w, p) to m's path. Tempfile-then-rename
-// keeps a half-written save from clobbering a known-good one if the
-// process dies mid-write. Returns a new Model with the last-save
-// timestamp updated.
-func (Impl) WriteWorld(m Model, w world.Model, p player.Model) (Model, error) {
+// WriteWorld atomically writes (w, p) to m's path. The world and player
+// Models are encoded through the injected ws/ps serializers (their owning
+// Impls) rather than methods on the Models themselves, keeping behavior on
+// Impl per the Model/Impl split. Tempfile-then-rename keeps a half-written
+// save from clobbering a known-good one if the process dies mid-write.
+// Returns a new Model with the last-save timestamp updated.
+func (Impl) WriteWorld(m Model, w world.Model, ws WorldSerializer, p player.Model, ps PlayerSerializer) (Model, error) {
 	if m.path == "" {
 		return m, fmt.Errorf("save: path is empty")
 	}
-	worldBytes, err := w.Serialize()
+	worldBytes, err := ws.Serialize(w)
 	if err != nil {
 		return m, fmt.Errorf("save: serialize world: %w", err)
 	}
-	playerBytes, err := p.Serialize()
+	playerBytes, err := ps.Serialize(p)
 	if err != nil {
 		return m, fmt.Errorf("save: serialize player: %w", err)
 	}

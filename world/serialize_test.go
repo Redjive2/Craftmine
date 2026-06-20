@@ -186,7 +186,8 @@ func TestDeserializeRejects(t *testing.T) {
 func TestSerializeRoundTrip(t *testing.T) {
 	w := testWorld(t)
 
-	data, err := w.Serialize()
+	var worldImpl world.World = world.Impl{}
+	data, err := worldImpl.Serialize(w)
 	if err != nil {
 		t.Fatalf("Serialize: %v", err)
 	}

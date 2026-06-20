@@ -14,6 +14,7 @@ type World interface {
 	Generate(seed int64, registry blocks.Model, registryImpl blocks.Blocks, opts GenerateOptions) (Model, error)
 	BlockAt(m Model, x, y, z int) blocks.BlockID
 	TreesInChunk(m Model, chunkX, chunkZ int) []Tree
+	Serialize(m Model) ([]byte, error)
 }
 
 // Impl is the zero-field implementation of World. All behavior hangs off Impl;

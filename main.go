@@ -298,7 +298,7 @@ func main() {
 	// logged and swallowed — we never want to deadlock or panic the exit
 	// path over a disk error.
 	if worldStarted && savePath != "" {
-		if _, err := saveImpl.WriteWorld(saveModel, worldModel, playerState); err != nil {
+		if _, err := saveImpl.WriteWorld(saveModel, worldModel, worldImpl, playerState, playerImpl); err != nil {
 			log.Printf("craftmine: save on close failed: %v", err)
 		} else {
 			log.Printf("craftmine: saved world to %s", savePath)

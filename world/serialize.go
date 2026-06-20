@@ -39,7 +39,10 @@ type worldSnapshot struct {
 // Serialize encodes the world Model to a gob blob. The blob is self-contained:
 // Deserialize can rebuild a working Model (including the per-chunk tree index)
 // from it alone, given that the dimensions remain multiples of ChunkSize.
-func (m Model) Serialize() ([]byte, error) {
+//
+// Behavior hangs off Impl; the Model to encode is passed as an argument, per
+// the Model/Impl split (see impl.go).
+func (Impl) Serialize(m Model) ([]byte, error) {
 	snap := worldSnapshot{
 		Seed:      m.seed,
 		Width:     m.width,

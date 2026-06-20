@@ -178,7 +178,8 @@ func TestSerializeRoundTrip(t *testing.T) {
 	p = player.SetVelocity(p, player.NewVec3(0.5, -1.0, 0.25))
 	p = player.SetOnGround(p, true)
 
-	data, err := p.Serialize()
+	var playerImpl player.Player = player.Impl{}
+	data, err := playerImpl.Serialize(p)
 	if err != nil {
 		t.Fatalf("Serialize: %v", err)
 	}

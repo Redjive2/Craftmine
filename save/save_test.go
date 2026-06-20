@@ -52,11 +52,13 @@ func tempSaveModel(t *testing.T) save.Model {
 // originals.
 func TestRoundTrip(t *testing.T) {
 	var impl save.Save = save.Impl{}
+	var worldImpl world.World = world.Impl{}
+	var playerImpl player.Player = player.Impl{}
 	m := tempSaveModel(t)
 	w := testWorld(t)
 	p := testPlayer()
 
-	updated, err := impl.WriteWorld(m, w, p)
+	updated, err := impl.WriteWorld(m, w, worldImpl, p, playerImpl)
 	if err != nil {
 		t.Fatalf("WriteWorld: %v", err)
 	}
@@ -107,7 +109,6 @@ func TestRoundTrip(t *testing.T) {
 	}
 	// Per-chunk index must still resolve every tree — it's rebuilt on
 	// load, so a bug in rebuild would silently drop trees from queries.
-	var worldImpl world.World = world.Impl{}
 	indexed := 0
 	for cx := 0; cx < gotWorld.ChunkCountX(); cx++ {
 		for cz := 0; cz < gotWorld.ChunkCountZ(); cz++ {
@@ -172,10 +173,12 @@ func TestExistsRejectsNonRegular(t *testing.T) {
 // surfaces ErrCorrupt rather than returning a half-built Model.
 func TestCorruptFile(t *testing.T) {
 	var impl save.Save = save.Impl{}
+	var worldImpl world.World = world.Impl{}
+	var playerImpl player.Player = player.Impl{}
 	m := tempSaveModel(t)
 	w := testWorld(t)
 	p := testPlayer()
-	updated, err := impl.WriteWorld(m, w, p)
+	updated, err := impl.WriteWorld(m, w, worldImpl, p, playerImpl)
 	if err != nil {
 		t.Fatalf("WriteWorld: %v", err)
 	}
@@ -245,10 +248,12 @@ func TestVersionMismatch(t *testing.T) {
 // confirming no stray *.tmp files survive a successful write.
 func TestWriteIsAtomic(t *testing.T) {
 	var impl save.Save = save.Impl{}
+	var worldImpl world.World = world.Impl{}
+	var playerImpl player.Player = player.Impl{}
 	m := tempSaveModel(t)
 	w := testWorld(t)
 	p := testPlayer()
-	updated, err := impl.WriteWorld(m, w, p)
+	updated, err := impl.WriteWorld(m, w, worldImpl, p, playerImpl)
 	if err != nil {
 		t.Fatalf("WriteWorld: %v", err)
 	}
@@ -268,6 +273,7 @@ func TestWriteIsAtomic(t *testing.T) {
 // position and look match what we saved.
 func TestIntegrationWalkSaveLoad(t *testing.T) {
 	var impl save.Save = save.Impl{}
+	var worldImpl world.World = world.Impl{}
 	var playerImpl player.Player = player.Impl{}
 	m := tempSaveModel(t)
 	w := testWorld(t)
@@ -291,7 +297,7 @@ func TestIntegrationWalkSaveLoad(t *testing.T) {
 	savedPos := p.Position()
 	savedLook := p.Look()
 
-	if _, err := impl.WriteWorld(m, w, p); err != nil {
+	if _, err := impl.WriteWorld(m, w, worldImpl, p, playerImpl); err != nil {
 		t.Fatalf("WriteWorld: %v", err)
 	}
 
